@@ -81,7 +81,7 @@ func (s *server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := s.db.Query(r.Context(), capacityQuery, weeks)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "query capacity: "+err.Error())
+		writeInternalError(w, r, fmt.Errorf("query capacity: %w", err))
 		return
 	}
 	defer rows.Close()
@@ -107,7 +107,7 @@ func (s *server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 			allocated, capacity float64
 		)
 		if err := rows.Scan(&id, &name, &weeklyHours, &weekStart, &allocated, &capacity); err != nil {
-			writeError(w, http.StatusInternalServerError, "scan capacity: "+err.Error())
+			writeInternalError(w, r, fmt.Errorf("scan capacity: %w", err))
 			return
 		}
 		if n := len(resp.People); n == 0 || resp.People[n-1].ID != id {
@@ -124,7 +124,7 @@ func (s *server) handleCapacity(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err := rows.Err(); err != nil {
-		writeError(w, http.StatusInternalServerError, "read capacity: "+err.Error())
+		writeInternalError(w, r, fmt.Errorf("read capacity: %w", err))
 		return
 	}
 

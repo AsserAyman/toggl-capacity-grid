@@ -201,3 +201,23 @@ left unfinished. Append as you go; a line or two per entry is right.
 - Not tested automatically: rendering, virtualization, the URL hook's history push/replace, the editor UI.
   Those would need jsdom + Testing Library (or Playwright); they were verified by hand in the browser.
 - Re-checked in the browser after the refactor: reference rows, cell classes, Dee 40→45→40 round trip.
+
+## Error handling review
+
+- 500s used to send the raw Postgres error to the browser and log nothing, so `make logs`
+  was empty when a query failed. Now `writeInternalError` logs method, URL and wrapped error,
+  and the client gets `"internal server error"`. 400/404 messages stay descriptive: they're
+  about the request and the grid shows them inline.
+- Requests whose context is already cancelled aren't logged: the grid aborts superseded range
+  loads while navigating, and those would otherwise flood the log as fake failures.
+- Verified by stopping the db container: GET and PATCH both return the generic 500, both errors
+  appear in the api log, API recovers once db is back. An aborted curl left no log line.
+- Left `/api/health` returning the raw error as plain text: scaffold code, and it's the
+  operator-facing diagnostic endpoint.
+- Reviewed "edits lost when their row scrolls out of the virtualized grid" and chose not to
+  fix it: the save itself still completes and the grid still refetches.
+- Tests (`api/main_test.go`, no seeded db needed): a pool on a closed port makes GET and PATCH fail;
+  both return exactly `{"error":"internal server error"}` and log the request line plus the underlying
+  connection error. A pre-cancelled request logs and writes nothing (status not asserted: net/http sends
+  an implicit empty 200 to a client that's gone). Checked both fail when the leak / the context check
+  is reintroduced.
