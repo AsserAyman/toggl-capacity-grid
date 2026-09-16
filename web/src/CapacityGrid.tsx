@@ -1,6 +1,7 @@
 import { memo, useMemo, useRef, useState } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import type { CapacityResponse, PersonCapacity, WeekCapacity } from './api'
+import { cellStatus, isOver, type CellStatus } from './cellStatus'
 import { addDays, formatShort } from './dates'
 import { useCapacity, useUpdateWeeklyHours } from './queries'
 
@@ -12,20 +13,6 @@ type Props = {
 const hours = new Intl.NumberFormat('en', { maximumFractionDigits: 2 })
 
 const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err))
-
-type CellStatus =
-  | { kind: 'empty' } // nothing allocated, whatever the capacity
-  | { kind: 'under' }
-  | { kind: 'full' }
-  | { kind: 'over'; overBy: number } // includes any hours against zero capacity
-
-function cellStatus({ allocated, capacity }: WeekCapacity): CellStatus {
-  if (allocated === 0) return { kind: 'empty' }
-  if (allocated > capacity) return { kind: 'over', overBy: allocated - capacity }
-  return allocated === capacity ? { kind: 'full' } : { kind: 'under' }
-}
-
-const isOver = (week: WeekCapacity) => cellStatus(week).kind === 'over'
 
 // A Record over the union's kinds: adding a status without a style won't compile.
 const cellClass: Record<CellStatus['kind'], string> = {

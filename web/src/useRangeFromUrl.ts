@@ -28,7 +28,7 @@ function subscribe(listener: () => void) {
 
 const getSearch = () => window.location.search
 
-function parseRange(search: string): Range | null {
+export function parseRange(search: string): Range | null {
   const params = new URLSearchParams(search)
   const from = params.get('from')
   const to = params.get('to')

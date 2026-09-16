@@ -181,3 +181,23 @@ left unfinished. Append as you go; a line or two per entry is right.
   test). A killed test process would leave it changed — `make reset` fixes that.
 - Checked the tests can fail: counting Mon–Sun instead of Mon–Fri made the reference test fail with
   "Ana … got 56/40, want 40/40 (weekend days carry no hours)" and caught Bo's boundary split too.
+
+## Tests — web
+
+- Run: `docker compose exec web npm test` (Vitest 5, node environment, no DOM).
+- `vitest.config.ts` sets `TZ=America/Los_Angeles`. The containers are UTC, where every date-helper
+  timezone bug is invisible; a guard test fails if the TZ isn't applied.
+- Covered: date helpers (UTC parsing, impossible dates, DST, year boundary, local `today()`), API client
+  (cell↔week attachment, alignment/shape rejection, ApiError status + message, non-JSON error body,
+  PATCH body), URL range parsing, retry policy, query-key normalization, cell status incl. zero capacity.
+- The save test drives TanStack Query's `MutationObserver`/`QueryObserver` directly (no React): a save
+  must invalidate every cached range, refetch only the visible one, and not resolve until that refetch
+  lands. To make that testable the hooks now wrap exported `capacityQueryOptions` /
+  `updateWeeklyHoursOptions`; `cellStatus` moved to its own module (exporting non-components from
+  CapacityGrid.tsx would break Vite fast refresh).
+- Checked the tests can fail — each of these deliberate bugs failed exactly its intended test:
+  `today()` via toISOString, formatShort without `timeZone: 'UTC'`, invalidating only the visible key,
+  onSuccess not returning the invalidation promise, removing the one-cell-per-week refine.
+- Not tested automatically: rendering, virtualization, the URL hook's history push/replace, the editor UI.
+  Those would need jsdom + Testing Library (or Playwright); they were verified by hand in the browser.
+- Re-checked in the browser after the refactor: reference rows, cell classes, Dee 40→45→40 round trip.
