@@ -97,3 +97,28 @@ left unfinished. Append as you go; a line or two per entry is right.
   window focus left on — partly covers edits from other clients.
 - Dropped neighbour-week prefetch I'd suggested: at 52 weeks it triples payload per navigation,
   and keepPreviousData already avoids the flash.
+
+## Type safety: zod at the boundary, discriminated unions, noUncheckedIndexedAccess
+
+- `api.ts` parses responses with zod instead of `as T`. The schema also enforces the one invariant
+  the TS type can't express: every person has exactly one cell per week. A transform then attaches
+  `week` to each cell, so the UI no longer indexes `person.weeks[i]` by the header's position.
+- A 2xx that fails the schema throws `ResponseShapeError` — not retried (contract bug, not transient).
+  Verified by patching `fetch` to drop one cell: grid replaced by "every person must have exactly one
+  cell per week", fetched once in 4s. Control: a 500 retried at ~1s and ~2s. (An earlier untimed run
+  counted 2 fetches for the broken range; not reproduced with timestamps — likely a window-focus
+  refetch, not a retry.)
+- Unions: `CellStatus` (`empty | under | full | over{overBy}`) with a `Record<kind, class>` so a new
+  status can't ship unstyled; `EditorState` (`viewing | editing{draft, validationError}`);
+  `ParsedHours` result type. Deliberately **no** `saving` mode — pending/error live in the mutation;
+  mirroring them in local state would be two sources of truth. No fetch-state union either: Query's
+  `status` already is one.
+- `noUncheckedIndexedAccess` on. It found one real hole: `parseDate` destructured `split('-')`
+  unchecked, so a malformed date became `Invalid Date` silently. Now throws.
+- The one remaining `!` is `r.weeks[i]!` in the zod transform, directly after the refine that
+  guarantees it.
+- Still hand-duplicated: Go structs and zod schemas. With a week I'd generate one from the other
+  (OpenAPI) rather than rely on the runtime check to catch drift.
+- Re-verified in browser: reference numbers for people 1–5 and header counts unchanged; empty draft →
+  "Enter a number"; server 400 shown inline; Dee 40→45→40 round trip updates cells + counts.
+  52 weeks still ~1s in dev, same as before zod — virtualization (next step) is the fix there.

@@ -2,8 +2,9 @@
 // viewer's timezone can never shift a day across a week boundary.
 
 export function parseDate(iso: string): Date {
-  const [y, m, d] = iso.split('-').map(Number)
-  return new Date(Date.UTC(y, m - 1, d))
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!match) throw new Error(`expected YYYY-MM-DD, got ${JSON.stringify(iso)}`)
+  return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
 }
 
 export function formatDate(date: Date): string {

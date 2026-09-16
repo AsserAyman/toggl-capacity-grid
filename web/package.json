@@ -10,7 +10,8 @@
   "dependencies": {
     "@tanstack/react-query": "5.103.0",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/react": "19.2.2",

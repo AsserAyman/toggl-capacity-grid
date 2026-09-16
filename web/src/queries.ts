@@ -12,12 +12,17 @@ export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 30_000,
-      // A 4xx (bad range, unknown person) won't fix itself; only retry what might.
-      retry: (failureCount, error) =>
-        failureCount < 2 && !(error instanceof ApiError && error.status < 500),
+      retry: (failureCount, error) => failureCount < 2 && isTransient(error),
     },
   },
 })
+
+// Only network failures and 5xx might succeed on a second try. A 4xx (bad range,
+// unknown person) or a ResponseShapeError won't fix itself.
+function isTransient(error: Error): boolean {
+  if (error instanceof ApiError) return error.status >= 500
+  return error instanceof TypeError // fetch rejects with TypeError when the network fails
+}
 
 export const capacityKeys = {
   all: ['capacity'] as const,

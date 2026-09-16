@@ -10,9 +10,29 @@ type Props = {
 
 const hours = new Intl.NumberFormat('en', { maximumFractionDigits: 2 })
 
-const isOver = (week: WeekCapacity) => week.allocated > week.capacity
-
 const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err))
+
+type CellStatus =
+  | { kind: 'empty' } // nothing allocated, whatever the capacity
+  | { kind: 'under' }
+  | { kind: 'full' }
+  | { kind: 'over'; overBy: number } // includes any hours against zero capacity
+
+function cellStatus({ allocated, capacity }: WeekCapacity): CellStatus {
+  if (allocated === 0) return { kind: 'empty' }
+  if (allocated > capacity) return { kind: 'over', overBy: allocated - capacity }
+  return allocated === capacity ? { kind: 'full' } : { kind: 'under' }
+}
+
+const isOver = (week: WeekCapacity) => cellStatus(week).kind === 'over'
+
+// A Record over the union's kinds: adding a status without a style won't compile.
+const cellClass: Record<CellStatus['kind'], string> = {
+  empty: 'cell cell-empty',
+  under: 'cell cell-under',
+  full: 'cell cell-full',
+  over: 'cell cell-over',
+}
 
 // CapacityGrid renders one row per person and one column per week, showing
 // how allocated each person is and making over-allocation obvious.
@@ -31,7 +51,12 @@ export function CapacityGrid({ from, to }: Props) {
     return error ? <ErrorBanner message={errorMessage(error)} onRetry={retry} /> : <p>Loading…</p>
   }
 
-  const overByWeek = data.weeks.map((_, i) => data.people.filter((p) => isOver(p.weeks[i])).length)
+  const overByWeek = new Map<string, number>()
+  for (const person of data.people) {
+    for (const cell of person.weeks) {
+      if (isOver(cell)) overByWeek.set(cell.week, (overByWeek.get(cell.week) ?? 0) + 1)
+    }
+  }
   const overPeople = data.people.filter((p) => p.weeks.some(isOver))
   const rows = onlyOver ? overPeople : data.people
 
@@ -65,14 +90,15 @@ export function CapacityGrid({ from, to }: Props) {
               <th scope="col" className="person-col">
                 Person <span className="muted">· weekly hours</span>
               </th>
-              {data.weeks.map((week, i) => (
-                <th scope="col" key={week}>
-                  <div title={`${week} to ${addDays(week, 6)}`}>{formatShort(week)}</div>
-                  <div className={overByWeek[i] > 0 ? 'over-text small' : 'muted small'}>
-                    {overByWeek[i]} over
-                  </div>
-                </th>
-              ))}
+              {data.weeks.map((week) => {
+                const over = overByWeek.get(week) ?? 0
+                return (
+                  <th scope="col" key={week}>
+                    <div title={`${week} to ${addDays(week, 6)}`}>{formatShort(week)}</div>
+                    <div className={over > 0 ? 'over-text small' : 'muted small'}>{over} over</div>
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
@@ -81,8 +107,8 @@ export function CapacityGrid({ from, to }: Props) {
                 <th scope="row" className="person-col">
                   <PersonCell person={person} />
                 </th>
-                {person.weeks.map((week, i) => (
-                  <CapacityCell key={data.weeks[i]} week={week} />
+                {person.weeks.map((cell) => (
+                  <CapacityCell key={cell.week} cell={cell} />
                 ))}
               </tr>
             ))}
@@ -100,59 +126,55 @@ export function CapacityGrid({ from, to }: Props) {
   )
 }
 
-function CapacityCell({ week }: { week: WeekCapacity }) {
-  const { allocated, capacity } = week
+function CapacityCell({ cell }: { cell: WeekCapacity }) {
+  const status = cellStatus(cell)
+  const capacity = hours.format(cell.capacity)
 
-  if (allocated === 0) {
+  if (status.kind === 'empty') {
     return (
-      <td className="cell cell-empty">
-        <span className="muted">— / {hours.format(capacity)}</span>
+      <td className={cellClass.empty}>
+        <span className="muted">— / {capacity}</span>
       </td>
     )
   }
 
-  const over = allocated - capacity
-  const state = over > 0 ? 'over' : over === 0 ? 'full' : 'under'
   return (
-    <td className={`cell cell-${state}`} title={`${hours.format(allocated)}h allocated of ${hours.format(capacity)}h`}>
-      <span className="allocated">{hours.format(allocated)}</span>
-      <span className="muted"> / {hours.format(capacity)}</span>
-      {over > 0 && <div className="small over-text">+{hours.format(over)}h over</div>}
+    <td
+      className={cellClass[status.kind]}
+      title={`${hours.format(cell.allocated)}h allocated of ${capacity}h`}
+    >
+      <span className="allocated">{hours.format(cell.allocated)}</span>
+      <span className="muted"> / {capacity}</span>
+      {status.kind === 'over' && (
+        <div className="small over-text">+{hours.format(status.overBy)}h over</div>
+      )}
     </td>
   )
 }
 
+// Whether a save is in flight or failed is server state and lives in the
+// mutation; this only tracks what the user is doing with the input.
+type EditorState =
+  | { mode: 'viewing' }
+  | { mode: 'editing'; draft: string; validationError: string | null }
+
+type ParsedHours = { ok: true; value: number } | { ok: false; error: string }
+
+function parseHours(draft: string): ParsedHours {
+  const value = Number(draft)
+  if (draft.trim() === '' || !Number.isFinite(value)) return { ok: false, error: 'Enter a number' }
+  return { ok: true, value }
+}
+
 function PersonCell({ person }: { person: PersonCapacity }) {
   const mutation = useUpdateWeeklyHours()
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState('')
-  const [validationError, setValidationError] = useState<string | null>(null)
+  const [editor, setEditor] = useState<EditorState>({ mode: 'viewing' })
 
-  const saving = mutation.isPending
-  const error = validationError ?? (mutation.error ? errorMessage(mutation.error) : null)
-
-  const startEditing = () => {
-    setDraft(String(person.weekly_hours))
-    setValidationError(null)
-    mutation.reset()
-    setEditing(true)
-  }
-
-  const save = () => {
-    const value = Number(draft)
-    if (draft.trim() === '' || !Number.isFinite(value)) {
-      setValidationError('Enter a number')
-      return
+  if (editor.mode === 'viewing') {
+    const startEditing = () => {
+      mutation.reset()
+      setEditor({ mode: 'editing', draft: String(person.weekly_hours), validationError: null })
     }
-    setValidationError(null)
-    if (value === person.weekly_hours) {
-      setEditing(false)
-      return
-    }
-    mutation.mutate({ id: person.id, weeklyHours: value }, { onSuccess: () => setEditing(false) })
-  }
-
-  if (!editing) {
     return (
       <div className="person">
         <span className="name">{person.name}</span>
@@ -166,6 +188,24 @@ function PersonCell({ person }: { person: PersonCapacity }) {
         </button>
       </div>
     )
+  }
+
+  const saving = mutation.isPending
+  const error = editor.validationError ?? (mutation.error ? errorMessage(mutation.error) : null)
+  const stopEditing = () => setEditor({ mode: 'viewing' })
+
+  const save = () => {
+    const parsed = parseHours(editor.draft)
+    if (!parsed.ok) {
+      setEditor({ ...editor, validationError: parsed.error })
+      return
+    }
+    if (parsed.value === person.weekly_hours) {
+      stopEditing()
+      return
+    }
+    setEditor({ ...editor, validationError: null })
+    mutation.mutate({ id: person.id, weeklyHours: parsed.value }, { onSuccess: stopEditing })
   }
 
   return (
@@ -182,19 +222,19 @@ function PersonCell({ person }: { person: PersonCapacity }) {
         min={0}
         max={168}
         step={0.5}
-        value={draft}
+        value={editor.draft}
         autoFocus
         disabled={saving}
         aria-label={`Weekly hours for ${person.name}`}
-        onChange={(e) => setDraft(e.target.value)}
+        onChange={(e) => setEditor({ ...editor, draft: e.target.value })}
         onKeyDown={(e) => {
-          if (e.key === 'Escape' && !saving) setEditing(false)
+          if (e.key === 'Escape' && !saving) stopEditing()
         }}
       />
       <button type="submit" disabled={saving}>
         {saving ? 'Saving…' : 'Save'}
       </button>
-      <button type="button" disabled={saving} onClick={() => setEditing(false)}>
+      <button type="button" disabled={saving} onClick={stopEditing}>
         Cancel
       </button>
       {error && <div className="small over-text">{error}</div>}
