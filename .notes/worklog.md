@@ -122,3 +122,29 @@ left unfinished. Append as you go; a line or two per entry is right.
 - Re-verified in browser: reference numbers for people 1–5 and header counts unchanged; empty draft →
   "Enter a number"; server 400 shown inline; Dee 40→45→40 round trip updates cells + counts.
   52 weeks still ~1s in dev, same as before zod — virtualization (next step) is the fix there.
+
+## Row virtualization + memoization
+
+- `@tanstack/react-virtual` on rows only, inside the existing `<table>` using top/bottom spacer rows,
+  so the sticky header and name column keep working. Rows are measured (heights differ: "+Nh over",
+  open editor). Columns not virtualized — the API caps at 53.
+- Baseline vs after, same conditions (dev build + StrictMode, background tab, 52 weeks × 500 people):
+  | | before | after |
+  |---|---|---|
+  | 52-week uncached load | 1620ms | 267ms |
+  | filter toggle | ~1100ms | ~70ms |
+  | next week (uncached) | 2464ms | 174ms |
+  | prev week (cached) | 2177ms | 54ms |
+  | scroll to bottom | 829ms | 50ms |
+  | DOM nodes | 64k | 3.4k |
+- Memo: `PersonRow` is `memo`'d; `summarize` (26k cells) is `useMemo`'d on `data`. Verified with a
+  temporary render counter (removed before commit): saving Dee re-rendered **only Dee's row** (2 =
+  StrictMode) — so `virtualizer.measureElement` is identity-stable and Query's structural sharing keeps
+  unchanged person objects identical through the zod transform. Opening the editor/typing: 0 row renders.
+- Tradeoffs: off-screen people aren't in the DOM, so Cmd+F can't find them (a name search would fix it);
+  an open editor scrolled far out of view unmounts and loses its draft (the save itself still completes
+  and invalidates — the hook-level `onSuccess` runs regardless of mount).
+- Header height isn't passed as `scrollMargin`; overscan of 10 rows absorbs the ~50px offset.
+- Not a bug, but I checked: people sort by Postgres `en_US.utf8` collation (Šimunović after Wiśniewski,
+  non-Latin scripts after Z). A browser `localeCompare` check disagreed on a few, which is collation, not
+  virtualization.

@@ -1,5 +1,6 @@
-import { useState } from 'react'
-import type { PersonCapacity, WeekCapacity } from './api'
+import { memo, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import type { CapacityResponse, PersonCapacity, WeekCapacity } from './api'
 import { addDays, formatShort } from './dates'
 import { useCapacity, useUpdateWeeklyHours } from './queries'
 
@@ -45,20 +46,17 @@ export function CapacityGrid({ from, to }: Props) {
   const { data, error, isFetching, isPlaceholderData, refetch } = useCapacity(from, to)
   const [onlyOver, setOnlyOver] = useState(false)
 
+  // Walks every cell (26k at 52 weeks); only redo it when the data changes,
+  // not when the filter or the fetching flag does.
+  const summary = useMemo(() => (data ? summarize(data) : null), [data])
+
   const retry = () => void refetch()
 
-  if (!data) {
+  if (!data || !summary) {
     return error ? <ErrorBanner message={errorMessage(error)} onRetry={retry} /> : <p>Loading…</p>
   }
 
-  const overByWeek = new Map<string, number>()
-  for (const person of data.people) {
-    for (const cell of person.weeks) {
-      if (isOver(cell)) overByWeek.set(cell.week, (overByWeek.get(cell.week) ?? 0) + 1)
-    }
-  }
-  const overPeople = data.people.filter((p) => p.weeks.some(isOver))
-  const rows = onlyOver ? overPeople : data.people
+  const rows = onlyOver ? summary.overPeople : data.people
 
   return (
     <section className="capacity" aria-busy={isFetching}>
@@ -68,8 +66,8 @@ export function CapacityGrid({ from, to }: Props) {
           {data.weeks.length === 1 ? 'week' : 'weeks'}
         </span>
         <span>
-          <strong className={overPeople.length > 0 ? 'over-text' : undefined}>
-            {overPeople.length}
+          <strong className={summary.overPeople.length > 0 ? 'over-text' : undefined}>
+            {summary.overPeople.length}
           </strong>{' '}
           of {data.people.length} people over capacity in at least one week
         </span>
@@ -83,48 +81,143 @@ export function CapacityGrid({ from, to }: Props) {
       {/* Background refetch failed: the grid below is still this range, just not fresh. */}
       {error && <ErrorBanner message={errorMessage(error)} onRetry={retry} />}
 
-      <div className={`grid-scroll${isPlaceholderData ? ' is-stale' : ''}`}>
-        <table>
-          <thead>
-            <tr>
-              <th scope="col" className="person-col">
-                Person <span className="muted">· weekly hours</span>
-              </th>
-              {data.weeks.map((week) => {
-                const over = overByWeek.get(week) ?? 0
-                return (
-                  <th scope="col" key={week}>
-                    <div title={`${week} to ${addDays(week, 6)}`}>{formatShort(week)}</div>
-                    <div className={over > 0 ? 'over-text small' : 'muted small'}>{over} over</div>
-                  </th>
-                )
-              })}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((person) => (
-              <tr key={person.id}>
-                <th scope="row" className="person-col">
-                  <PersonCell person={person} />
-                </th>
-                {person.weeks.map((cell) => (
-                  <CapacityCell key={cell.week} cell={cell} />
-                ))}
-              </tr>
-            ))}
-            {rows.length === 0 && (
-              <tr>
-                <td colSpan={data.weeks.length + 1} className="muted">
-                  Nobody is over capacity in this range.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+      <CapacityTable
+        weeks={data.weeks}
+        rows={rows}
+        overByWeek={summary.overByWeek}
+        stale={isPlaceholderData}
+      />
     </section>
   )
 }
+
+function summarize(data: CapacityResponse) {
+  const overByWeek = new Map<string, number>()
+  const overPeople: PersonCapacity[] = []
+  for (const person of data.people) {
+    let personOver = false
+    for (const cell of person.weeks) {
+      if (!isOver(cell)) continue
+      personOver = true
+      overByWeek.set(cell.week, (overByWeek.get(cell.week) ?? 0) + 1)
+    }
+    if (personOver) overPeople.push(person)
+  }
+  return { overByWeek, overPeople }
+}
+
+// Rows are virtualized: at 52 weeks × 500 people the full table is ~64k DOM
+// nodes. Columns aren't — the API caps a range at 53 weeks, so a rendered row
+// window stays small. Off-screen people are not in the DOM, so browser
+// find-in-page won't see them.
+function CapacityTable({
+  weeks,
+  rows,
+  overByWeek,
+  stale,
+}: {
+  weeks: string[]
+  rows: PersonCapacity[]
+  overByWeek: Map<string, number>
+  stale: boolean
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_HEIGHT_ESTIMATE,
+    getItemKey: (index) => rows[index]?.id ?? index,
+    // Generous overscan also absorbs the header's height, which offsets rows
+    // from the virtualizer's scroll origin.
+    overscan: 10,
+  })
+
+  const items = virtualizer.getVirtualItems()
+  const paddingTop = items[0]?.start ?? 0
+  const paddingBottom = virtualizer.getTotalSize() - (items.at(-1)?.end ?? 0)
+  const columns = weeks.length + 1
+
+  return (
+    <div ref={scrollRef} className={`grid-scroll${stale ? ' is-stale' : ''}`}>
+      <table aria-rowcount={rows.length + 1}>
+        <thead>
+          <tr aria-rowindex={1}>
+            <th scope="col" className="person-col">
+              Person <span className="muted">· weekly hours</span>
+            </th>
+            {weeks.map((week) => {
+              const over = overByWeek.get(week) ?? 0
+              return (
+                <th scope="col" key={week}>
+                  <div title={`${week} to ${addDays(week, 6)}`}>{formatShort(week)}</div>
+                  <div className={over > 0 ? 'over-text small' : 'muted small'}>{over} over</div>
+                </th>
+              )
+            })}
+          </tr>
+        </thead>
+        <tbody>
+          {paddingTop > 0 && <SpacerRow height={paddingTop} columns={columns} />}
+          {items.map((item) => {
+            const person = rows[item.index]
+            return (
+              person && (
+                <PersonRow
+                  key={person.id}
+                  person={person}
+                  index={item.index}
+                  measureRef={virtualizer.measureElement}
+                />
+              )
+            )
+          })}
+          {paddingBottom > 0 && <SpacerRow height={paddingBottom} columns={columns} />}
+          {rows.length === 0 && (
+            <tr>
+              <td colSpan={columns} className="muted">
+                Nobody is over capacity in this range.
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+const ROW_HEIGHT_ESTIMATE = 41
+
+function SpacerRow({ height, columns }: { height: number; columns: number }) {
+  return (
+    <tr aria-hidden="true" className="spacer">
+      <td colSpan={columns} style={{ height }} />
+    </tr>
+  )
+}
+
+// Memoized so a refetch re-renders only the people whose data changed:
+// TanStack Query's structural sharing keeps unchanged person objects identical.
+const PersonRow = memo(function PersonRow({
+  person,
+  index,
+  measureRef,
+}: {
+  person: PersonCapacity
+  index: number
+  measureRef: (node: Element | null) => void
+}) {
+  return (
+    // Rows differ in height ("+Nh over", an open editor), so each is measured.
+    <tr ref={measureRef} data-index={index} aria-rowindex={index + 2}>
+      <th scope="row" className="person-col">
+        <PersonCell person={person} />
+      </th>
+      {person.weeks.map((cell) => (
+        <CapacityCell key={cell.week} cell={cell} />
+      ))}
+    </tr>
+  )
+})
 
 function CapacityCell({ cell }: { cell: WeekCapacity }) {
   const status = cellStatus(cell)

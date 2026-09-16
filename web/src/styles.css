@@ -160,3 +160,8 @@ thead .person-col {
   background: var(--over-bg);
   box-shadow: inset 3px 0 0 var(--over);
 }
+
+.spacer td {
+  padding: 0;
+  border: 0;
+}
