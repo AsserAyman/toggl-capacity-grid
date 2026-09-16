@@ -7,7 +7,8 @@
 - 0 capacity with hours is over (Eli). Exactly full is not over.
 - Editing weekly hours changes past weeks too, there's no history in the schema.
 - After a save, every cached range is marked stale and the visible one refetches before "Saving…" clears. Other ranges refetch when you navigate to them. No local patching, so the capacity calculation stays only in the API.
-- The API shape and client design were left open: aggregations in the DB, TanStack Query for server state, range kept in the URL (no Zustand), Zod + discriminated unions for type safety, virtualization + memoization since a year is 500 × 53 cells.
+- API shape: `weeks` (list of Mondays) once at the top, and each person has `{allocated, capacity}` cells in the same order. Capacity is per cell even though it's constant today, so it can vary per week later without changing the client.
+- Client: aggregations in the DB, TanStack Query for server state, range kept in the URL (no Zustand), Zod + discriminated unions for type safety, virtualization + memoization since a year is 500 × 53 cells.
 
 ## What did you notice that looked wrong?
 
