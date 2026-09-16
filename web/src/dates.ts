@@ -1,0 +1,43 @@
+// Dates travel as 'YYYY-MM-DD' strings. Arithmetic happens in UTC so the
+// viewer's timezone can never shift a day across a week boundary.
+
+export function parseDate(iso: string): Date {
+  const [y, m, d] = iso.split('-').map(Number)
+  return new Date(Date.UTC(y, m - 1, d))
+}
+
+export function formatDate(date: Date): string {
+  return date.toISOString().slice(0, 10)
+}
+
+export function addDays(iso: string, days: number): string {
+  const date = parseDate(iso)
+  date.setUTCDate(date.getUTCDate() + days)
+  return formatDate(date)
+}
+
+export function daysBetween(from: string, to: string): number {
+  return Math.round((parseDate(to).getTime() - parseDate(from).getTime()) / 86_400_000)
+}
+
+export function mondayOf(iso: string): string {
+  const daysSinceMonday = (parseDate(iso).getUTCDay() + 6) % 7
+  return addDays(iso, -daysSinceMonday)
+}
+
+// today is the viewer's local calendar date, not the UTC one.
+export function today(): string {
+  const now = new Date()
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
+}
+
+const shortFormat = new Intl.DateTimeFormat('en', {
+  month: 'short',
+  day: 'numeric',
+  timeZone: 'UTC',
+})
+
+export function formatShort(iso: string): string {
+  return shortFormat.format(parseDate(iso))
+}

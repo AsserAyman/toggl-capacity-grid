@@ -1,32 +1,162 @@
 :root {
   color-scheme: light dark;
   font-family: ui-sans-serif, system-ui, sans-serif;
+  --line: color-mix(in srgb, currentColor 20%, transparent);
+  --bg: Canvas;
+  --over: #d93036;
+  --over-bg: color-mix(in srgb, #e5484d 22%, Canvas);
+  --full-bg: color-mix(in srgb, #f5a524 16%, Canvas);
+  --under-bg: color-mix(in srgb, #30a46c 10%, Canvas);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --over: #ff6369;
+  }
 }
 
 body {
   margin: 0;
   padding: 2rem;
+  background: var(--bg);
 }
 
 h1 {
   font-size: 1.4rem;
-  margin: 0 0 0.25rem;
+  margin: 0 0 1rem;
+}
+
+button,
+input {
+  font: inherit;
 }
 
 .range {
-  margin: 0 0 1.5rem;
   opacity: 0.6;
   font-variant-numeric: tabular-nums;
 }
 
+.muted {
+  opacity: 0.6;
+}
+
+.small {
+  font-size: 0.8rem;
+}
+
+.over-text {
+  color: var(--over);
+  font-weight: 600;
+}
+
+.range-controls,
+.capacity-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin: 0 0 1rem;
+}
+
+.error {
+  border: 1px solid var(--over);
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  margin: 0 0 1rem;
+}
+
+.grid-scroll {
+  max-height: 75vh;
+  overflow: auto;
+  border: 1px solid var(--line);
+}
+
+.grid-scroll.is-stale {
+  opacity: 0.6;
+  transition: opacity 0.15s 0.1s;
+}
+
 table {
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-variant-numeric: tabular-nums;
 }
 
 th,
 td {
-  border: 1px solid color-mix(in srgb, currentColor 20%, transparent);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   padding: 0.5rem 0.75rem;
   text-align: left;
+  white-space: nowrap;
+}
+
+thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg);
+  font-weight: 600;
+}
+
+.person-col {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background: var(--bg);
+  font-weight: normal;
+  min-width: 16rem;
+}
+
+thead .person-col {
+  z-index: 3;
+}
+
+.person {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.person .name {
+  flex: 1;
+}
+
+.person input {
+  width: 5rem;
+}
+
+.hours-button {
+  background: none;
+  border: 1px dashed var(--line);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  cursor: pointer;
+}
+
+.hours-button:hover {
+  border-style: solid;
+}
+
+.cell {
+  min-width: 6.5rem;
+  text-align: right;
+}
+
+.cell .allocated {
+  font-weight: 600;
+}
+
+.cell-under {
+  background: var(--under-bg);
+}
+
+.cell-full {
+  background: var(--full-bg);
+}
+
+.cell-over {
+  background: var(--over-bg);
+  box-shadow: inset 3px 0 0 var(--over);
 }
