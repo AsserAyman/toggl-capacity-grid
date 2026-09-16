@@ -166,3 +166,18 @@ left unfinished. Append as you go; a line or two per entry is right.
 - Verified in browser: push/back/forward/back-to-no-params; 3 date edits left history.length unchanged;
   deep link with `team=design` opened on Mar 2 and kept `team` after Week →; the three invalid links fell
   back to Dec 29.
+
+## Tests — Go
+
+- Run (no local Go; doesn't touch Makefile/compose — uses the compose network and seeded db):
+  `docker run --rm --network toggl-assessment_default -v "$PWD/api":/src -v capacity-gomodcache:/go/pkg/mod -w /src -e DATABASE_URL='postgres://capacity:capacity@db:5432/capacity?sslmode=disable' golang:1.26-alpine go test ./...`
+  Without `DATABASE_URL` the integration tests skip and unit tests still run.
+- Unit: `parseWeekRange` (widening, Sunday, year boundary, 53-week cap, bad input); PATCH validation
+  through the real router with a nil db — proves validation runs before any query.
+- Integration: people 1–5 reference numbers (the hand-derived ones above), one cell per week for all
+  500; PATCH→GET shows new capacity in every week with allocation unchanged; unknown person → 404.
+- Extracted `s.routes()` from `main()` so tests hit production routing (method + `{id}` patterns).
+- The write test changes Dee and restores the original in `t.Cleanup` via SQL (not via the API under
+  test). A killed test process would leave it changed — `make reset` fixes that.
+- Checked the tests can fail: counting Mon–Sun instead of Mon–Fri made the reference test fail with
+  "Ana … got 56/40, want 40/40 (weekend days carry no hours)" and caught Bo's boundary split too.
