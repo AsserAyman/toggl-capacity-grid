@@ -221,3 +221,9 @@ left unfinished. Append as you go; a line or two per entry is right.
   connection error. A pre-cancelled request logs and writes nothing (status not asserted: net/http sends
   an implicit empty 200 to a client that's gone). Checked both fail when the leak / the context check
   is reintroduced.
+
+## Correction
+
+- The API section above says the week of 2026-01-05 only has the 5 hand-built people. Wrong week:
+  Jan 5 has 198 people with hours. It's **2026-01-12** that only has hours for 4 people (Ana, Bo,
+  Cem, Dee). Checked by counting distinct people per week in psql.
