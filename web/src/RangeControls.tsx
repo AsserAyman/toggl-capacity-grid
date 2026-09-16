@@ -1,13 +1,9 @@
 import { addDays, daysBetween, mondayOf, today } from './dates'
-
-export type Range = {
-  from: string
-  to: string
-}
+import type { HistoryMode, Range } from './useRangeFromUrl'
 
 type Props = {
   range: Range
-  onChange: (range: Range) => void
+  onChange: (range: Range, mode: HistoryMode) => void
 }
 
 // RangeControls sits at page level rather than inside the grid: the team
@@ -15,19 +11,19 @@ type Props = {
 // same range.
 export function RangeControls({ range, onChange }: Props) {
   const shift = (days: number) =>
-    onChange({ from: addDays(range.from, days), to: addDays(range.to, days) })
+    onChange({ from: addDays(range.from, days), to: addDays(range.to, days) }, 'push')
 
   const jumpToThisWeek = () => {
     const from = mondayOf(today())
-    onChange({ from, to: addDays(from, daysBetween(range.from, range.to)) })
+    onChange({ from, to: addDays(from, daysBetween(range.from, range.to)) }, 'push')
   }
 
   // Keep the range valid while typing: moving one end past the other drags it along.
   const setFrom = (from: string) => {
-    if (from) onChange({ from, to: from > range.to ? from : range.to })
+    if (from) onChange({ from, to: from > range.to ? from : range.to }, 'replace')
   }
   const setTo = (to: string) => {
-    if (to) onChange({ from: to < range.from ? to : range.from, to })
+    if (to) onChange({ from: to < range.from ? to : range.from, to }, 'replace')
   }
 
   return (

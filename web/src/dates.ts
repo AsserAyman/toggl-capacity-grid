@@ -7,6 +7,12 @@ export function parseDate(iso: string): Date {
   return new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])))
 }
 
+// isIsoDate rejects malformed strings and impossible dates like 2026-02-31,
+// which Date.UTC would silently roll over into March.
+export function isIsoDate(value: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) && formatDate(parseDate(value)) === value
+}
+
 export function formatDate(date: Date): string {
   return date.toISOString().slice(0, 10)
 }

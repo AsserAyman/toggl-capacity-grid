@@ -1,13 +1,12 @@
-import { useState } from 'react'
 import { CapacityGrid } from './CapacityGrid'
-import { RangeControls, type Range } from './RangeControls'
+import { RangeControls } from './RangeControls'
+import { useRangeFromUrl, type Range } from './useRangeFromUrl'
 
-// The range the grid opens on. The controls move it from there.
-const FROM = '2025-12-29'
-const TO = '2026-01-16'
+// The range the grid opens on when the URL doesn't carry one.
+const DEFAULT_RANGE: Range = { from: '2025-12-29', to: '2026-01-16' }
 
 export function App() {
-  const [range, setRange] = useState<Range>({ from: FROM, to: TO })
+  const [range, setRange] = useRangeFromUrl(DEFAULT_RANGE)
 
   return (
     <main>

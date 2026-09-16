@@ -148,3 +148,21 @@ left unfinished. Append as you go; a line or two per entry is right.
 - Not a bug, but I checked: people sort by Postgres `en_US.utf8` collation (Šimunović after Wiśniewski,
   non-Latin scripts after Z). A browser `localeCompare` check disagreed on a few, which is collation, not
   virtualization.
+- Correction to the entry above: "hook-level `onSuccess` runs regardless of mount" is from the TanStack
+  Query docs (mutate()-level callbacks don't fire after unmount; useMutation-level ones do). Not tested here.
+
+## Range in the URL
+
+- `?from=&to=` via a hand-rolled `useRangeFromUrl` (no react-router for one param pair). The URL is the
+  only store: read with `useSyncExternalStore` (popstate + our own notify, since pushState doesn't fire
+  popstate), so there's no useState copy to drift from the address bar.
+- Week buttons / "This week" **push** (Back undoes a step); date inputs **replace** — Chrome fires change
+  per day/month/year segment, which would flood history. Consequence: Back skips over typed-date edits
+  to the last button step. Deliberate.
+- Other query params are preserved, for whatever else lands on the overview page.
+- Invalid URL (malformed, impossible date like 2026-02-31, from > to) → default range. The bad params stay
+  in the address bar until the next navigation rewrites them; I didn't add an effect to strip them.
+- No params → default range and a clean URL; params only appear after the first change.
+- Verified in browser: push/back/forward/back-to-no-params; 3 date edits left history.length unchanged;
+  deep link with `team=design` opened on Mar 2 and kept `team` after Week →; the three invalid links fell
+  back to Dec 29.
