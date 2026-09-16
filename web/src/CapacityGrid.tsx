@@ -1,12 +1,7 @@
-import { useEffect, useState } from 'react'
-import {
-  fetchCapacity,
-  updateWeeklyHours,
-  type CapacityResponse,
-  type PersonCapacity,
-  type WeekCapacity,
-} from './api'
-import { addDays, formatShort, mondayOf } from './dates'
+import { useState } from 'react'
+import type { PersonCapacity, WeekCapacity } from './api'
+import { addDays, formatShort } from './dates'
+import { useCapacity, useUpdateWeeklyHours } from './queries'
 
 type Props = {
   from: string
@@ -17,48 +12,23 @@ const hours = new Intl.NumberFormat('en', { maximumFractionDigits: 2 })
 
 const isOver = (week: WeekCapacity) => week.allocated > week.capacity
 
+const errorMessage = (err: unknown) => (err instanceof Error ? err.message : String(err))
+
 // CapacityGrid renders one row per person and one column per week, showing
 // how allocated each person is and making over-allocation obvious.
 //
-// After a person's weekly hours are saved, the grid refetches the whole range
-// rather than patching cells locally: how capacity is derived per week lives
-// only in the API, so the client never has to re-implement it.
+// After a person's weekly hours are saved, every cached range is invalidated
+// and the visible one refetched, rather than patching cells locally: how
+// capacity is derived per week lives only in the API, so the client never has
+// to re-implement it.
 export function CapacityGrid({ from, to }: Props) {
-  const [data, setData] = useState<CapacityResponse | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [reloadKey, setReloadKey] = useState(0)
+  const { data, error, isFetching, isPlaceholderData, refetch } = useCapacity(from, to)
   const [onlyOver, setOnlyOver] = useState(false)
 
-  useEffect(() => {
-    // Aborting on cleanup means a slow response for a range (or a pre-save
-    // state) the user has already moved past can never overwrite newer data.
-    const controller = new AbortController()
-    setLoading(true)
-    fetchCapacity(from, to, controller.signal)
-      .then((next) => {
-        setData(next)
-        setError(null)
-        setLoading(false)
-      })
-      .catch((err: unknown) => {
-        if (controller.signal.aborted) return
-        setError(err instanceof Error ? err.message : String(err))
-        setLoading(false)
-      })
-    return () => controller.abort()
-  }, [from, to, reloadKey])
+  const retry = () => void refetch()
 
-  const reload = () => setReloadKey((k) => k + 1)
-
-  // After a failed range change, `data` still holds the previous range. Keep it
-  // on screen only while it answers the question being asked (e.g. a refresh
-  // after save failed); never show old weeks under a new range.
-  const showsRequestedRange =
-    data !== null && data.from === mondayOf(from) && data.to === addDays(mondayOf(to), 6)
-
-  if (!data || (error && !showsRequestedRange)) {
-    return error ? <ErrorBanner message={error} onRetry={reload} /> : <p>Loading…</p>
+  if (!data) {
+    return error ? <ErrorBanner message={errorMessage(error)} onRetry={retry} /> : <p>Loading…</p>
   }
 
   const overByWeek = data.weeks.map((_, i) => data.people.filter((p) => isOver(p.weeks[i])).length)
@@ -66,7 +36,7 @@ export function CapacityGrid({ from, to }: Props) {
   const rows = onlyOver ? overPeople : data.people
 
   return (
-    <section className="capacity" aria-busy={loading}>
+    <section className="capacity" aria-busy={isFetching}>
       <div className="capacity-summary">
         <span className="range">
           {formatShort(data.from)} – {formatShort(data.to)}, {data.weeks.length}{' '}
@@ -82,12 +52,13 @@ export function CapacityGrid({ from, to }: Props) {
           <input type="checkbox" checked={onlyOver} onChange={(e) => setOnlyOver(e.target.checked)} />{' '}
           Only show over-allocated
         </label>
-        {loading && <span className="muted">Refreshing…</span>}
+        {isFetching && <span className="muted">Refreshing…</span>}
       </div>
 
-      {error && <ErrorBanner message={error} onRetry={reload} />}
+      {/* Background refetch failed: the grid below is still this range, just not fresh. */}
+      {error && <ErrorBanner message={errorMessage(error)} onRetry={retry} />}
 
-      <div className={`grid-scroll${loading ? ' is-stale' : ''}`}>
+      <div className={`grid-scroll${isPlaceholderData ? ' is-stale' : ''}`}>
         <table>
           <thead>
             <tr>
@@ -108,7 +79,7 @@ export function CapacityGrid({ from, to }: Props) {
             {rows.map((person) => (
               <tr key={person.id}>
                 <th scope="row" className="person-col">
-                  <PersonCell person={person} onSaved={reload} />
+                  <PersonCell person={person} />
                 </th>
                 {person.weeks.map((week, i) => (
                   <CapacityCell key={data.weeks[i]} week={week} />
@@ -151,39 +122,34 @@ function CapacityCell({ week }: { week: WeekCapacity }) {
   )
 }
 
-function PersonCell({ person, onSaved }: { person: PersonCapacity; onSaved: () => void }) {
+function PersonCell({ person }: { person: PersonCapacity }) {
+  const mutation = useUpdateWeeklyHours()
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [validationError, setValidationError] = useState<string | null>(null)
+
+  const saving = mutation.isPending
+  const error = validationError ?? (mutation.error ? errorMessage(mutation.error) : null)
 
   const startEditing = () => {
     setDraft(String(person.weekly_hours))
-    setError(null)
+    setValidationError(null)
+    mutation.reset()
     setEditing(true)
   }
 
-  const save = async () => {
+  const save = () => {
     const value = Number(draft)
     if (draft.trim() === '' || !Number.isFinite(value)) {
-      setError('Enter a number')
+      setValidationError('Enter a number')
       return
     }
+    setValidationError(null)
     if (value === person.weekly_hours) {
       setEditing(false)
       return
     }
-    setSaving(true)
-    setError(null)
-    try {
-      await updateWeeklyHours(person.id, value)
-      setEditing(false)
-      onSaved()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setSaving(false)
-    }
+    mutation.mutate({ id: person.id, weeklyHours: value }, { onSuccess: () => setEditing(false) })
   }
 
   if (!editing) {
@@ -207,7 +173,7 @@ function PersonCell({ person, onSaved }: { person: PersonCapacity; onSaved: () =
       className="person"
       onSubmit={(e) => {
         e.preventDefault()
-        void save()
+        save()
       }}
     >
       <span className="name">{person.name}</span>
@@ -222,7 +188,7 @@ function PersonCell({ person, onSaved }: { person: PersonCapacity; onSaved: () =
         aria-label={`Weekly hours for ${person.name}`}
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') setEditing(false)
+          if (e.key === 'Escape' && !saving) setEditing(false)
         }}
       />
       <button type="submit" disabled={saving}>

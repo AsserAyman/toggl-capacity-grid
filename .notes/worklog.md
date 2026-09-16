@@ -77,3 +77,23 @@ left unfinished. Append as you go; a line or two per entry is right.
 - Known gap: no live updates — an edit from another client (my curl restore) isn't
   visible until the next navigation/reload.
 - Input has `step=0.5`, so the browser blocks e.g. 37.25 though the API accepts it.
+
+## Move server state to TanStack Query
+
+- Replaced the hand-rolled effect/AbortController/reloadKey with `useCapacity` + `useUpdateWeeklyHours`
+  (`web/src/queries.ts`). Same behaviour, less code, and matches the team's stack.
+- Query key is the widened Mon–Sun range (what the API answers), not the raw inputs, so
+  equivalent requests share a cache entry.
+- Caching introduced a new way to be wrong: a save must invalidate **every** cached range
+  (`['capacity']` prefix), not just the visible one — otherwise going back a week shows the old
+  capacity. Verified: warmed Jan 5 range, edited Dee on Dec 29, navigated forward → /45.
+- `onSuccess` returns the invalidation promise, so the mutation stays pending until the visible
+  range has refetched. Verified with a MutationObserver: editing → saving (old numbers) →
+  closed (new numbers) in one commit; never closed with old numbers.
+  (First attempt sampled with requestAnimationFrame — paused in a background tab, inconclusive.)
+- `keepPreviousData` while paging. Verified that a failing range (>53 weeks) drops the placeholder,
+  so the old grid doesn't sit under the error — the manual `showsRequestedRange` check is gone.
+- No retries on 4xx (`ApiError.status`); up to 2 on network/5xx. staleTime 30s, refetch on
+  window focus left on — partly covers edits from other clients.
+- Dropped neighbour-week prefetch I'd suggested: at 52 weeks it triples payload per navigation,
+  and keepPreviousData already avoids the flash.

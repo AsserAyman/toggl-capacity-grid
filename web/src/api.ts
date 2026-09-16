@@ -42,11 +42,21 @@ export async function updateWeeklyHours(id: number, weeklyHours: number): Promis
   })
 }
 
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 async function request<T>(url: string, init: RequestInit): Promise<T> {
   const res = await fetch(url, init)
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null
-    throw new Error(body?.error ?? `${res.status} ${res.statusText}`)
+    throw new ApiError(body?.error ?? `${res.status} ${res.statusText}`, res.status)
   }
   return (await res.json()) as T
 }
