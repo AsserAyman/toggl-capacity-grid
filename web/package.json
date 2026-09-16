@@ -5,17 +5,22 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "tsc": "tsc --noEmit"
+    "tsc": "tsc --noEmit",
+    "test": "vitest run"
   },
   "dependencies": {
+    "@tanstack/react-query": "5.103.0",
+    "@tanstack/react-virtual": "3.14.13",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.1",
     "@vitejs/plugin-react": "6.1.1",
     "typescript": "5.9.3",
-    "vite": "8.2.2"
+    "vite": "8.2.2",
+    "vitest": "5.0.1"
   }
 }
